@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
-	"strings"
+	"slices"
 
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 )
@@ -59,6 +58,10 @@ func (t *ReadImageTool) Parameters() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
+			"mimeType": map[string]any{
+				"type":        "string",
+				"description": "Mime type of the image",
+			},
 			"prompt": map[string]any{
 				"type":        "string",
 				"description": "What you want to know about the image(s). E.g. 'Describe this image in detail' or 'What text is in this image?'",
@@ -84,7 +87,8 @@ func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) *Resul
 	// If path is provided, load image from workspace file
 	images := MediaImagesFromCtx(ctx)
 	if imgPath, _ := args["path"].(string); imgPath != "" {
-		fileImages, err := t.loadImageFromPath(ctx, imgPath)
+		mimeType := args["mimeType"].(string)
+		fileImages, err := t.loadImageFromPath(ctx, imgPath, mimeType)
 		if err != nil {
 			return ErrorResult(err.Error())
 		}
@@ -154,17 +158,14 @@ func (t *ReadImageTool) callProvider(ctx context.Context, cp credentialProvider,
 }
 
 // loadImageFromPath reads an image file from the workspace and returns it as ImageContent.
-func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]providers.ImageContent, error) {
+func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string, mimeType string) ([]providers.ImageContent, error) {
 	// Infer MIME type from extension
-	ext := strings.ToLower(filepath.Ext(path))
-	mimeTypes := map[string]string{
-		".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-		".png": "image/png", ".gif": "image/gif",
-		".webp": "image/webp", ".bmp": "image/bmp",
+	mimeTypes := []string{
+		"image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
 	}
-	mime, ok := mimeTypes[ext]
-	if !ok {
-		return nil, fmt.Errorf("unsupported image format: %s (supported: jpg, png, gif, webp, bmp)", ext)
+
+	if !slices.Contains(mimeTypes, mimeType) {
+		return nil, fmt.Errorf("unsupported image format: %s (supported: jpg, png, gif, webp, bmp)", mimeType)
 	}
 
 	// Resolve path within workspace (respect workspace restriction).
@@ -192,7 +193,7 @@ func (t *ReadImageTool) loadImageFromPath(ctx context.Context, path string) ([]p
 	}
 
 	return []providers.ImageContent{{
-		MimeType: mime,
+		MimeType: mimeType,
 		Data:     base64.StdEncoding.EncodeToString(data),
 	}}, nil
 }
